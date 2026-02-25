@@ -7,7 +7,7 @@ import subprocess
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-from openai import OpenAI
+# from openai import OpenAI
 
 # =======================
 # KONFIG
