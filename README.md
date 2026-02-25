@@ -46,12 +46,14 @@ The project explores how AI can reinterpret live information streams and materia
     brew install ffmpeg
 
 - Testa:
+
     ffmpeg -version
 
 - Installera Python (via brew)
     brew install python
 
 - Testa:
+
     python3 --version
     pip3 --version
 
@@ -64,20 +66,18 @@ The project explores how AI can reinterpret live information streams and materia
 ```bash
 
 - Projekt
-
   cd examen-work
-
 
 - Create a virtual environment:
 
-python3 -m venv .venv
-source .venv/bin/activate
+  python3 -m venv .venv
+  source .venv/bin/activate
 
 
 - Skapa en virtuell miljö - Detta gör att vi slipper installera paket globalt på datorn.
 
-python3 -m venv .venv
-source .venv/bin/activate
+  python3 -m venv .venv
+  source .venv/bin/activate
 
 => Vi ser nu (.venv) i terminalen.
 
