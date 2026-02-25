@@ -8,10 +8,6 @@ The project explores how AI can reinterpret live information streams and materia
 
 ---
 
-## View it live
-
----
-
 ## What It Does
 
 - **Live audio input**
