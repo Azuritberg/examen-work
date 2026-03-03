@@ -146,7 +146,7 @@ radio-llm-receipt/
 
 `.venv/` → virtuell miljö
 
-`radio_to_receipt.py` → huvudprogram
+`radio-to-receipt.py` → huvudprogram
 
 `out/` → skapas automatiskt av programmet
 
