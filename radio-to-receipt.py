@@ -7,7 +7,7 @@ import subprocess
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-# from openai import OpenAI
+from openai import OpenAI
 
 
 
@@ -45,6 +45,18 @@ def ensure_ffmpeg() -> None:
     if shutil.which("ffmpeg") is None:
         raise RuntimeError(
             "ffmpeg hittades inte. Installera med: brew install ffmpeg"
+        )
+
+
+def validate_config() -> None:
+    if "DIN-WEBBRADIO-STREAM-URL-HÄR" in STREAM_URL:
+        raise RuntimeError(
+            "STREAM_URL är fortfarande placeholder-text. Sätt en riktig webbradio-URL först."
+        )
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise RuntimeError(
+            "OPENAI_API_KEY saknas. Sätt den i terminalen innan du kör scriptet."
         )
 
 
@@ -218,6 +230,7 @@ def print_raw_bytes_to_cups(raw_bytes: bytes, printer_name: Optional[str]) -> No
 # =======================
 def main() -> None:
     ensure_ffmpeg()
+    validate_config()
 
     memory = ""
     log("Startar webbradio → STT → LLM → ESC/POS → skrivare. Avsluta med Ctrl+C")
