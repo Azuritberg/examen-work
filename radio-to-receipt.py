@@ -23,7 +23,7 @@ LANGUAGE = "sv"
 # CUPS queue name: kolla med `lpstat -p`
 PRINTER_NAME = "Star_TSP100III"  # eller None för default
 
-TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
+TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"  # eller annan modell 
 LLM_MODEL = "gpt-5"
 
 OUT_DIR = "out"
