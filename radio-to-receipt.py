@@ -9,9 +9,9 @@ from typing import Optional, Dict, Any
 
 from dotenv import load_dotenv
 
-from openai import OpenAI
+from openai import OpenAI # OpenAI Python-paket
 
-load_dotenv()
+load_dotenv() # load .env
 
 # =======================
 # KONFIG
