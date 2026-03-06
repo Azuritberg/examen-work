@@ -7,7 +7,7 @@ import subprocess
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # python-dotenv
 
 from openai import OpenAI # OpenAI Python-paket
 
