@@ -1,293 +1,363 @@
-import os
 import json
 import time
-import uuid
 import shutil
 import subprocess
-from datetime import datetime
-from typing import Optional, Dict, Any
+from pathlib import Path
+from typing import Optional
 
-from dotenv import load_dotenv  # python-dotenv
 
-from openai import OpenAI # OpenAI Python-paket
-
-load_dotenv() # load .env
-
-# =======================
+# =========================
 # KONFIG
-# =======================
-STREAM_URL = "https://DIN-WEBBRADIO-STREAM-URL-HÄR"   # mp3/aac stream URL
-CHUNK_SECONDS = 12
-LANGUAGE = "sv"
-
-# CUPS queue name: kolla med `lpstat -p`
-PRINTER_NAME = "Star_TSP100III"  # eller None för default
-
-TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"  # eller annan modell 
-LLM_MODEL = "gpt-5"
-
-OUT_DIR = "out"
-os.makedirs(OUT_DIR, exist_ok=True)
-
-client = OpenAI()
+# =========================
+JSON_FILE = "spraket_ai_sync_segments.json"
+DRY_RUN = True              # True = skriv bara till terminalen, False = skicka till skrivare
+PRINTER_NAME = None         # ändra till "Star_TSP100III" eller None för standardskrivare
+POLL_INTERVAL = 0.05        # hur ofta vi kollar tiden (sekunder)
+EXTRA_FEED_LINES = 2        # extra tomrader efter varje chunk
+GLOBAL_AUDIO_OFFSET = 0.0   # 0.3  # Justera detta värde (i sekunder) för att kompensera för eventuella fördröjningar i ljuduppspelningen eller skrivaren. Positivt värde gör att texten skrivs ut tidigare, negativt gör att den skrivs ut senare.
 
 
-# =======================
-# HJÄLP: LOGG
-# =======================
-def log(msg: str) -> None:
-    ts = datetime.now().strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
+# =========================
+# HJÄLPFUNKTIONER
+# =========================
+def load_data(json_path: str) -> dict:
+    path = Path(json_path)
+    if not path.exists():
+        raise FileNotFoundError(f"JSON-filen hittades inte: {json_path}")
+
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-# =======================
-# 1) AUDIO CAPTURE
-# =======================
-def ensure_ffmpeg() -> None:
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError(
-            "ffmpeg hittades inte. Installera med: brew install ffmpeg"
-        )
+def resolve_audio_path(data: dict, json_path: str) -> Path:
+    audio_name = data["program"]["audio_file"]
+    json_dir = Path(json_path).resolve().parent
+    audio_path = (json_dir / audio_name).resolve()
+
+    if not audio_path.exists():
+        raise FileNotFoundError(f"Ljudfilen hittades inte: {audio_path}")
+
+    return audio_path
 
 
-def validate_config() -> None:
-    if "DIN-WEBBRADIO-STREAM-URL-HÄR" in STREAM_URL:
-        raise RuntimeError(
-            "STREAM_URL är fortfarande placeholder-text. Sätt en riktig webbradio-URL först."
-        )
+def flatten_schedule(data: dict) -> list[dict]:
+    schedule = []
 
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise RuntimeError(
-            "OPENAI_API_KEY saknas. Sätt den i terminalen innan du kör scriptet."
-        )
+    for segment in data["segments"]:
+        segment_start = segment["start_seconds"]
 
+        for chunk in segment["print_chunks"]:
+            actual_print_time = segment_start + chunk["offset_seconds"]
 
-def capture_audio_chunk(stream_url: str, seconds: int, out_path: str) -> None:
-    """
-    Spelar in en kort ljudbit från stream och sparar som WAV 16kHz mono.
-    Reconnect-flaggor hjälper när streamen droppar.
-    """
-    cmd = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel", "error",
-        "-y",
-        "-reconnect", "1",
-        "-reconnect_streamed", "1",
-        "-reconnect_delay_max", "5",
-        "-i", stream_url,
-        "-t", str(seconds),
-        "-ac", "1",
-        "-ar", "16000",
-        "-f", "wav",
-        out_path,
-    ]
-    subprocess.run(cmd, check=True)
+            schedule.append({
+                "segment_id": segment["id"],
+                "chunk_id": chunk["chunk_id"],
+                "print_time": actual_print_time,
+                "text": chunk["text"],
+                "segment_start": segment["start_seconds"],
+                "segment_end": segment["end_seconds"],
+            })
+
+    schedule.sort(key=lambda item: item["print_time"])
+    return schedule
 
 
-# =======================
-# 2) TRANSKRIBERA
-# =======================
-def transcribe_wav(path: str) -> str:
-    with open(path, "rb") as f:
-        tr = client.audio.transcriptions.create(
-            model=TRANSCRIBE_MODEL,
-            file=f,
-            response_format="text",
-            language=LANGUAGE,
-        )
-    return (getattr(tr, "text", tr) or "").strip()
+def build_receipt_text(text: str) -> str:
+    return text.rstrip() + "\n" * EXTRA_FEED_LINES
 
 
-# =======================
-# 3) LLM: BESLUT + KVITTO-TEXT
-# =======================
-def decide_and_compose_receipt(transcript: str, memory: str) -> Dict[str, Any]:
-    """
-    Returnerar JSON:
-    {
-      "should_print": true/false,
-      "title": "...",
-      "body": "...",
-      "memory_update": "..."
-    }
-    """
-    instructions = (
-        "Du lyssnar på svensk webbradio. Du får ett transkript.\n"
-        "Uppgift: avgör om något bör skrivas ut som en kort anteckning på kvitto.\n\n"
-        "Skriv bara ut om transkriptet innehåller tydlig, konkret och användbar information:\n"
-        "- datum/tid/plats\n"
-        "- instruktioner, uppmaningar\n"
-        "- tydliga viktiga punkter\n\n"
-        "Skriv INTE ut om det mest är:\n"
-        "- musikprat, reklam utan nytta, småprat\n"
-        "- otydligt/fragment\n\n"
-        "Returnera ALLTID giltig JSON med exakt nycklarna:\n"
-        "{\n"
-        '  "should_print": true/false,\n'
-        '  "title": "Kort rubrik",\n'
-        '  "body": "Max 1200 tecken. Använd radbrytningar.",\n'
-        '  "memory_update": "Max 400 tecken: viktig kontext framåt"\n'
-        "}\n"
-        "Svara inte med något annat än JSON."
-    )
-
-    input_text = (
-        f"MINNE (kan vara tomt):\n{memory}\n\n"
-        f"NYTT TRANSKRIPT:\n{transcript}\n"
-    )
-
-    resp = client.responses.create(
-        model=LLM_MODEL,
-        instructions=instructions,
-        input=input_text,
-    )
-
-    raw = (resp.output_text or "").strip()
-    start, end = raw.find("{"), raw.rfind("}")
-    if start == -1 or end == -1:
-        raise ValueError(f"Inget JSON i modellsvaret:\n{raw}")
-
-    data = json.loads(raw[start:end + 1])
-
-    for key in ("should_print", "title", "body", "memory_update"):
-        if key not in data:
-            raise ValueError(f"Saknar nyckel {key} i JSON: {data}")
-
-    # städa
-    data["title"] = str(data["title"] or "").strip()
-    data["body"] = str(data["body"] or "").strip()
-    data["memory_update"] = str(data["memory_update"] or "").strip()
-
-    # hårda gränser (så att kvittot inte ballar ur)
-    data["body"] = data["body"][:1200]
-    data["memory_update"] = data["memory_update"][:400]
-
-    return data
-
-
-# =======================
-# 4) ESC/POS-BYTES (KVITTO)
-# =======================
-def escpos_receipt_bytes(title: str, body: str) -> bytes:
-    """
-    Enkel ESC/POS-layout:
-    - init
-    - center + bold rubrik
-    - body vänster
-    - timestamp
-    - feed + cut
-
-    OBS: Kräver att skrivaren använder ESC/POS / Star emulation som accepterar kommandon.
-    """
-    b = bytearray()
-
-    # init
-    b += b"\x1b\x40"  # ESC @
-
-    # rubrik (center + bold)
-    b += b"\x1b\x61\x01"  # ESC a 1 center
-    b += b"\x1b\x45\x01"  # ESC E 1 bold on
-    b += (title[:48] + "\n").encode("utf-8", errors="replace")
-    b += b"\x1b\x45\x00"  # bold off
-
-    # separator
-    b += b"\x1b\x61\x00"  # left
-    b += ("-" * 32 + "\n").encode("ascii")
-
-    # body
-    for line in body.splitlines():
-        b += (line[:48] + "\n").encode("utf-8", errors="replace")
-
-    b += (("\n" + "-" * 32 + "\n").encode("ascii"))
-    b += datetime.now().strftime("%Y-%m-%d %H:%M").encode("ascii") + b"\n"
-
-    # feed
-    b += b"\n\n\n"
-
-    # cut
-    b += b"\x1d\x56\x00"  # GS V 0
-
-    return bytes(b)
-
-
-def print_raw_bytes_to_cups(raw_bytes: bytes, printer_name: Optional[str]) -> None:
-    """
-    Skickar RAW-jobb via CUPS `lp -o raw`.
-    """
-    job_path = os.path.join(OUT_DIR, f"receipt_{uuid.uuid4().hex[:8]}.bin")
-    with open(job_path, "wb") as f:
-        f.write(raw_bytes)
+def send_to_printer(text: str, printer_name: Optional[str] = None) -> None:
+    receipt_text = build_receipt_text(text)
 
     cmd = ["lp"]
     if printer_name:
-        cmd += ["-d", printer_name]
-    cmd += ["-o", "raw", job_path]
+        cmd.extend(["-d", printer_name])
+    cmd.append("-")
 
-    subprocess.run(cmd, check=True)
+    subprocess.run(
+        cmd,
+        input=receipt_text,
+        text=True,
+        check=True
+    )
 
 
-# =======================
-# MAIN LOOP
-# =======================
+def print_or_send(text: str, printer_name: Optional[str], dry_run: bool) -> None:
+    if dry_run:
+        print(text)
+    else:
+        send_to_printer(text, printer_name)
+
+
+def start_audio_player(audio_path: Path) -> subprocess.Popen:
+    if shutil.which("afplay") is None:
+        raise RuntimeError("Kunde inte hitta 'afplay'. Detta script är gjort för macOS.")
+
+    return subprocess.Popen(["afplay", str(audio_path)])
+
+
+# =========================
+# HUVUDPROGRAM
+# =========================
 def main() -> None:
-    ensure_ffmpeg()
-    validate_config()
+    data = load_data(JSON_FILE)
+    audio_path = resolve_audio_path(data, JSON_FILE)
+    schedule = flatten_schedule(data)
 
-    memory = ""
-    log("Startar webbradio → STT → LLM → ESC/POS → skrivare. Avsluta med Ctrl+C")
+    if not schedule:
+        raise ValueError("Inga print_chunks hittades i JSON-filen.")
 
-    while True:
-        chunk_id = uuid.uuid4().hex[:8]
-        wav_path = os.path.join(OUT_DIR, f"chunk_{chunk_id}.wav")
+    print("Program:", data["program"].get("title", "Okänd titel"))
+    print("Ljudfil:", audio_path.name)
+    print("Antal utskriftsblock:", len(schedule))
+    print("Läge:", "DRY RUN" if DRY_RUN else "SKRIVARE")
+    print()
 
-        try:
-            capture_audio_chunk(STREAM_URL, CHUNK_SECONDS, wav_path)
-        except subprocess.CalledProcessError as e:
-            log(f"ffmpeg-fel (stream?): {e}. Försöker igen...")
-            time.sleep(2)
-            continue
+    player = start_audio_player(audio_path)
+    start_monotonic = time.monotonic()
 
-        try:
-            transcript = transcribe_wav(wav_path)
-        except Exception as e:
-            log(f"Transkribering-fel: {e}. Försöker igen...")
-            time.sleep(1)
-            continue
+    try:
+        for item in schedule:
+            target_time = max(0, item["print_time"] - GLOBAL_AUDIO_OFFSET) # Se till att mål-tiden inte blir negativ, vilket kan hända om offseten är större än print_time
+            
+            
+            # target_time = item["print_time"] - GLOBAL_AUDIO_OFFSET # Justera mål-tiden med den globala offseten
 
-        if not transcript:
-            log("[SKIP] tomt transkript")
-            time.sleep(0.5)
-            continue
+            while True:
+                elapsed = time.monotonic() - start_monotonic
+                remaining = target_time - elapsed
 
-        try:
-            decision = decide_and_compose_receipt(transcript, memory)
-        except Exception as e:
-            log(f"LLM-fel / JSON-fel: {e}. Försöker igen...")
-            time.sleep(1)
-            continue
+                if remaining <= 0:
+                    break
 
-        memory = decision["memory_update"]
+                time.sleep(min(POLL_INTERVAL, remaining))
 
-        if decision["should_print"]:
-            title = decision["title"] or "Meddelande"
-            body = decision["body"] or transcript
+            output_text = item["text"]
+            print_or_send(output_text, PRINTER_NAME, DRY_RUN)
 
-            try:
-                raw = escpos_receipt_bytes(title, body)
-                print_raw_bytes_to_cups(raw, PRINTER_NAME)
-                log(f"[PRINT] {title}")
-            except subprocess.CalledProcessError as e:
-                log(f"Utskrift-fel (CUPS/lp): {e}")
-        else:
-            log(f"[SKIP] {transcript[:120]}")
+        player.wait()
 
-        # broms: så du inte spam:ar API
-        time.sleep(0.6)
+    except KeyboardInterrupt:
+        print("\nAvbrutet av användaren.")
+        player.terminate()
+        raise
+
+    finally:
+        if player.poll() is None:
+            player.terminate()
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        log("Avslutar.")
+    main()
+
+
+
+#  TODO:
+
+# global timing-offset
+
+# olika print-stilar för rubrik / talare / brödtext
+
+# automatisk radbrytning för kvittobredd
+
+# loggfil med exakt när varje chunk faktiskt skickades
+
+# stöd för “cut” mellan sektioner om skrivaren klarar det
+
+# Nästa steg är att anpassas koden/texten till kvittobredd, så att varje chunk automatiskt bryts snyggt för Star TSP100III.
+
+
+
+
+
+## ------------------------------------------------------------------ ##
+
+# KOMMENTARER: Koden här nedan är den ursprungliga versionen som jag utgick ifrån när jag gjorde ändringarna ovan. Jag har lämnat den kvar här i kommenterad form för att visa vad som har ändrats och för att underlätta jämförelse. Denna del kan ignoreras eller tas bort i den slutgiltiga versionen. 
+
+# De största ändringarna i den nya versionen är: att denna koden har en time-stamp i början av varje utskriftsblock, att den inte längre har segment/chunk-id i prefixet, att den inte längre har segmentstart/segmentend i varje item, och att den inte längre har en horisontell linje mellan varje block i terminalen när DRY_RUN är True.
+
+# EXEMPEL:  
+#  [00:10] segment 1 / chunk 1
+#  Sanna Carlsson, hur mycket använder du artificiell intelligens?
+#  ----------------------------------------
+
+#  [00:14] segment 1 / chunk 2
+#  Väldigt lite som jag vet om, men ganska mycket som jag inte tänker på.
+#  ----------------------------------------
+
+## Utan texten skrivs ut i terminalen så ser det ut så här:
+
+# Sanna Carlsson, hur mycket använder du artificiell intelligens?
+# Väldigt lite som jag vet om, men ganska mycket som jag inte tänker på.
+
+# import json
+# import time
+# import shutil
+# import subprocess
+# from pathlib import Path
+# from typing import Optional
+
+
+# # =========================
+# # KONFIG
+# # =========================
+# JSON_FILE = "spraket_ai_sync_segments.json"
+# DRY_RUN = True            # True = skriv bara till terminalen, False = skicka till skrivare
+# PRINTER_NAME = None       # t.ex. "Star_TSP100III" eller None för standardskrivare
+# POLL_INTERVAL = 0.05      # hur ofta vi kollar tiden (sekunder)
+# EXTRA_FEED_LINES = 2      # extra tomrader efter varje chunk
+# GLOBAL_AUDIO_OFFSET = 0.0 # 0.3  # Justera detta värde (i sekunder) för att kompensera för eventuella fördröjningar i ljuduppspelningen eller skrivaren. Positivt värde gör att texten skrivs ut tidigare, negativt gör att den skrivs ut senare.
+
+# # =========================
+# # HJÄLPFUNKTIONER
+# # =========================
+# def format_mmss(seconds: float) -> str:
+#     total = max(0, int(seconds))
+#     minutes = total // 60
+#     secs = total % 60
+#     return f"{minutes:02d}:{secs:02d}"
+
+
+# def load_data(json_path: str) -> dict:
+#     path = Path(json_path)
+#     if not path.exists():
+#         raise FileNotFoundError(f"JSON-filen hittades inte: {json_path}")
+
+#     with path.open("r", encoding="utf-8") as f:
+#         return json.load(f)
+
+
+# def resolve_audio_path(data: dict, json_path: str) -> Path:
+#     audio_name = data["program"]["audio_file"]
+#     json_dir = Path(json_path).resolve().parent
+#     audio_path = (json_dir / audio_name).resolve()
+
+#     if not audio_path.exists():
+#         raise FileNotFoundError(f"Ljudfilen hittades inte: {audio_path}")
+
+#     return audio_path
+
+
+# def flatten_schedule(data: dict) -> list[dict]:
+#     """
+#     Gör om nested segments -> print_chunks till en platt lista
+#     med exakta utskriftstider.
+#     """
+#     schedule = []
+
+#     for segment in data["segments"]:
+#         segment_start = segment["start_seconds"]
+
+#         for chunk in segment["print_chunks"]:
+#             actual_print_time = segment_start + chunk["offset_seconds"]
+
+#             schedule.append({
+#                 "segment_id": segment["id"],
+#                 "chunk_id": chunk["chunk_id"],
+#                 "print_time": actual_print_time,
+#                 "text": chunk["text"],
+#                 "segment_start": segment["start_seconds"],
+#                 "segment_end": segment["end_seconds"],
+#             })
+
+#     schedule.sort(key=lambda item: item["print_time"])
+#     return schedule
+
+
+# def build_receipt_text(text: str) -> str:
+#     return text.rstrip() + "\n" * EXTRA_FEED_LINES
+
+
+# def send_to_printer(text: str, printer_name: Optional[str] = None) -> None:
+#     """
+#     Skickar text till CUPS via lp.
+#     lp kan läsa från stdin om man använder '-'.
+#     """
+#     receipt_text = build_receipt_text(text)
+
+#     cmd = ["lp"]
+#     if printer_name:
+#         cmd.extend(["-d", printer_name])
+#     cmd.append("-")
+
+#     subprocess.run(
+#         cmd,
+#         input=receipt_text,
+#         text=True,
+#         check=True
+#     )
+
+
+# def print_or_send(text: str, printer_name: Optional[str], dry_run: bool) -> None:
+#     if dry_run:
+#         print(text)
+#         print("-" * 40)
+#     else:
+#         send_to_printer(text, printer_name)
+
+
+# def start_audio_player(audio_path: Path) -> subprocess.Popen:
+#     """
+#     Startar ljudet på macOS via afplay.
+#     """
+#     if shutil.which("afplay") is None:
+#         raise RuntimeError("Kunde inte hitta 'afplay'. Detta script är gjort för macOS.")
+
+#     return subprocess.Popen(["afplay", str(audio_path)])
+
+
+# # =========================
+# # HUVUDPROGRAM
+# # =========================
+# def main() -> None:
+#     data = load_data(JSON_FILE)
+#     audio_path = resolve_audio_path(data, JSON_FILE)
+#     schedule = flatten_schedule(data)
+
+#     if not schedule:
+#         raise ValueError("Inga print_chunks hittades i JSON-filen.")
+
+#     print("Program:", data["program"].get("title", "Okänd titel"))
+#     print("Ljudfil:", audio_path.name)
+#     print("Antal utskriftsblock:", len(schedule))
+#     print("Läge:", "DRY RUN" if DRY_RUN else "SKRIVARE")
+#     print()
+
+#     player = start_audio_player(audio_path)
+#     start_monotonic = time.monotonic()
+
+#     try:
+#         for item in schedule:
+#              target_time = max(0, item["print_time"] - GLOBAL_AUDIO_OFFSET)
+#            # target_time = item["print_time"]
+
+#             while True:
+#                 elapsed = time.monotonic() - start_monotonic
+#                 remaining = target_time - elapsed
+
+#                 if remaining <= 0:
+#                     break
+
+#                 time.sleep(min(POLL_INTERVAL, remaining))
+
+#             stamp = format_mmss(item["print_time"])
+#             prefix = f"[{stamp}] segment {item['segment_id']} / chunk {item['chunk_id']}\n"
+#             output_text = prefix + item["text"]
+
+#             print_or_send(output_text, PRINTER_NAME, DRY_RUN)
+
+#         # Vänta tills ljudspelaren är klar
+#         player.wait()
+
+#     except KeyboardInterrupt:
+#         print("\nAvbrutet av användaren.")
+#         player.terminate()
+#         raise
+
+#     finally:
+#         if player.poll() is None:
+#             player.terminate()
+
+
+# if __name__ == "__main__":
+#     main()
