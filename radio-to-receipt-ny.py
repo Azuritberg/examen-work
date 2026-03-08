@@ -7,6 +7,16 @@ import select
 from pathlib import Path
 from typing import Optional
 
+import os
+import tempfile
+
+# PDF (ReportLab)
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+
 import vlc
 
 
@@ -39,17 +49,40 @@ import vlc
 # =========================
 # KONFIG
 # =========================
+# =========================
+# PDF/Custom font mode
+# =========================
+PDF_MODE = True  # True => render each line to a PDF using any font, then print with lp
+
+# Receipt width ~72 mm printable area on 80 mm paper
+PDF_PAGE_WIDTH_MM = 72.0
+PDF_LEFT_MARGIN_MM = 4.0
+PDF_RIGHT_MARGIN_MM = 4.0
+PDF_TOP_MARGIN_MM = 1
+PDF_BOTTOM_MARGIN_MM = 1
+
+# Font settings (change these!)
+PDF_FONT_NAME = "Times-Roman"  # Any font registered with ReportLab
+PDF_FONT_SIZE = 8           # Try 12–14 for body text
+PDF_LINE_SPACING = 1      # 1.0–1.3 typical
+
+# Optional: use a custom TTF/OTF by specifying a path and name
+# Example:
+# PDF_FONT_PATH = "/Library/Fonts/Futura.ttc"
+# PDF_FONT_NAME = "Futura"
+PDF_FONT_PATH: Optional[str] = None
+
 JSON_FILE = "spraket_ai_sync_segments.json"
 
 # True = simulera skrivare i terminalen
 # False = skicka till kvittoskrivare via lp
-DRY_RUN = True
+DRY_RUN = False
 
 # Sätt skrivarnamn om du vill skriva ut på riktigt
-PRINTER_NAME = "Star_TSP100III"   # eller None
+PRINTER_NAME = "Star_TSP143__STR_T_001_"   # eller None (model: Star_TSP100III)
 
 # För 80 mm kvitto är ungefär 42–48 tecken ofta rimligt
-RECEIPT_WIDTH = 42
+RECEIPT_WIDTH = 52
 
 # Extra tomrader efter sista raden i en chunk
 EXTRA_FEED_LINES = 2
@@ -65,6 +98,37 @@ POLL_INTERVAL = 0.05
 # =========================
 # HJÄLPFUNKTIONER
 # =========================
+def _register_pdf_font_if_needed():
+    """Register a custom TTF/OTF once if a font path is provided."""
+    if PDF_FONT_PATH:
+        if not Path(PDF_FONT_PATH).exists():
+            raise FileNotFoundError(f"Font file not found: {PDF_FONT_PATH}")
+        pdfmetrics.registerFont(TTFont(PDF_FONT_NAME, PDF_FONT_PATH))
+
+def _build_single_line_pdf(out_path: str, text: str, *, is_last_line_in_chunk: bool) -> None:
+    """
+    Renders a single text line to a narrow PDF page.
+    If it's the last line in a chunk, we extend the page height to emulate EXTRA_FEED_LINES.
+    """
+    page_w = PDF_PAGE_WIDTH_MM * mm
+
+    # Compute line height & page height
+    line_height = PDF_FONT_SIZE * PDF_LINE_SPACING
+    extra_lines = EXTRA_FEED_LINES if is_last_line_in_chunk else 0
+    content_h = PDF_TOP_MARGIN_MM * mm + line_height + (extra_lines * line_height) + PDF_BOTTOM_MARGIN_MM * mm
+    page_h = max(content_h, 30 * mm)  # ensure a small minimum height
+
+    c = canvas.Canvas(out_path, pagesize=(page_w, page_h))
+    c.setFont(PDF_FONT_NAME, PDF_FONT_SIZE)
+
+    x = PDF_LEFT_MARGIN_MM * mm
+    y = page_h - PDF_TOP_MARGIN_MM * mm - PDF_FONT_SIZE  # baseline
+
+    # No wrapping here—your scheduler already wrapped lines.
+    c.drawString(x, y, text)
+    c.showPage()
+    c.save()
+    
 def load_data(json_path: str) -> dict:
     path = Path(json_path)
     if not path.exists():
@@ -188,24 +252,64 @@ def simulate_printer_output_line(text: str, is_last_line_in_chunk: bool) -> None
         print("\n" * (EXTRA_FEED_LINES - 1), end="")
 
 
+# def send_line_to_printer(text: str, printer_name: Optional[str] = None, is_last_line_in_chunk: bool = False) -> None:
+#     receipt_text = text.rstrip() + "\n"
+#     if is_last_line_in_chunk:
+#         receipt_text += "\n" * EXTRA_FEED_LINES
+
+#     cmd = ["lp"]
+#     if printer_name:
+#         cmd.extend(["-d", printer_name])
+#     cmd.append("-")
+
+#     subprocess.run(
+#         cmd,
+#         input=receipt_text,
+#         text=True,
+#         check=True
+#     )
+
 def send_line_to_printer(text: str, printer_name: Optional[str] = None, is_last_line_in_chunk: bool = False) -> None:
-    receipt_text = text.rstrip() + "\n"
-    if is_last_line_in_chunk:
-        receipt_text += "\n" * EXTRA_FEED_LINES
+    """
+    In PDF mode: render a one-line PDF and send it via 'lp'.
+    In text mode: send plain text to 'lp' (original behavior).
+    """
+    if not printer_name:
+        raise RuntimeError("Ingen skrivarkö angiven. Sätt PRINTER_NAME eller kör i DRY_RUN-läge.")
 
-    cmd = ["lp"]
-    if printer_name:
-        cmd.extend(["-d", printer_name])
-    cmd.append("-")
+    if PDF_MODE:
+        _register_pdf_font_if_needed()
 
-    subprocess.run(
-        cmd,
-        input=receipt_text,
-        text=True,
-        check=True
-    )
+        # Create a temp PDF for this line
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp_path = tmp.name
 
+        try:
+            _build_single_line_pdf(tmp_path, text.rstrip(), is_last_line_in_chunk=is_last_line_in_chunk)
+            cmd = ["lp", "-d", printer_name, tmp_path]
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    else:
+        # --- original plain text path ---
+        receipt_text = text.rstrip() + "\n"
+        if is_last_line_in_chunk:
+            receipt_text += "\n" * EXTRA_FEED_LINES
 
+        cmd = ["lp"]
+        if printer_name:
+            cmd.extend(["-d", printer_name])
+        cmd.append("-")
+
+        subprocess.run(
+            cmd,
+            input=receipt_text,
+            text=True,
+            check=True
+        )
 def print_or_send_line(text: str, printer_name: Optional[str], dry_run: bool, is_last_line_in_chunk: bool) -> None:
     if dry_run:
         simulate_printer_output_line(text, is_last_line_in_chunk)
