@@ -10,6 +10,8 @@ from typing import Optional
 import vlc
 
 
+from pdf_printer import print_lines_as_pdf
+
 # NOTE: Den här versionen gör:
 
 # den synkar mot ljudets faktiska uppspelningstid i stället för bara en timer
@@ -43,10 +45,10 @@ JSON_FILE = "spraket_ai_sync_segments.json"
 
 # True = simulera skrivare i terminalen
 # False = skicka till kvittoskrivare via lp
-DRY_RUN = True
+DRY_RUN = False
 
 # Sätt skrivarnamn om du vill skriva ut på riktigt
-PRINTER_NAME = "Star_TSP100III"   # eller None
+PRINTER_NAME = "Star_STSP143__STR_T_001_"   # eller None Star_TSP100III
 
 # För 80 mm kvitto är ungefär 42–48 tecken ofta rimligt
 RECEIPT_WIDTH = 42
@@ -60,6 +62,12 @@ GLOBAL_AUDIO_OFFSET = 0.0
 
 # Hur ofta schedulern kollar om något ska skrivas ut
 POLL_INTERVAL = 0.05
+
+
+# PDF-PRINTER KONFIG
+PDF_FONT_NAME = "Helvetica"
+PDF_FONT_SIZE = 18
+USE_PDF_PRINTING = True
 
 
 # =========================
@@ -206,11 +214,26 @@ def send_line_to_printer(text: str, printer_name: Optional[str] = None, is_last_
     )
 
 
+# def print_or_send_line(text: str, printer_name: Optional[str], dry_run: bool, is_last_line_in_chunk: bool) -> None:
+#     if dry_run:
+#         simulate_printer_output_line(text, is_last_line_in_chunk)
+#     else:
+#         send_line_to_printer(text, printer_name, is_last_line_in_chunk)
+
 def print_or_send_line(text: str, printer_name: Optional[str], dry_run: bool, is_last_line_in_chunk: bool) -> None:
     if dry_run:
         simulate_printer_output_line(text, is_last_line_in_chunk)
     else:
-        send_line_to_printer(text, printer_name, is_last_line_in_chunk)
+        if USE_PDF_PRINTING:
+            lines = wrap_text_to_lines(text, RECEIPT_WIDTH)
+            print_lines_as_pdf(
+                lines=lines,
+                printer_name=printer_name,
+                font_size=PDF_FONT_SIZE,
+                font_name=PDF_FONT_NAME,
+            )
+        else:
+            send_line_to_printer(text, printer_name, is_last_line_in_chunk)
 
 
 def get_player_position_seconds(player: vlc.MediaPlayer) -> float:
