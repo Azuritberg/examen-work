@@ -9,14 +9,16 @@ from reportlab.lib.units import mm
 
 PDF_WIDTH_MM = 80
 PDF_HEIGHT_MM = 200
-PDF_LEFT_MARGIN_MM = 5
-PDF_TOP_MARGIN_MM = 10
-PDF_BOTTOM_MARGIN_MM = 10
+
+PDF_LEFT_MARGIN_MM = 3
+PDF_RIGHT_MARGIN_MM = 3
+PDF_TOP_MARGIN_MM = 4
+PDF_BOTTOM_MARGIN_MM = 4
 
 
 def create_receipt_pdf(
     lines: list[str],
-    font_size: int = 14,
+    font_size: int = 8,
     font_name: str = "Helvetica",
 ) -> str:
     """
@@ -35,7 +37,8 @@ def create_receipt_pdf(
     x = PDF_LEFT_MARGIN_MM * mm
     y = height - (PDF_TOP_MARGIN_MM * mm)
 
-    line_height = font_size + 4
+    # Lite tätare eller luftigare radavstånd
+    line_height = font_size + 2 # 2, 4, eller 6 kan vara bra att testa
 
     for line in lines:
         if y < PDF_BOTTOM_MARGIN_MM * mm:

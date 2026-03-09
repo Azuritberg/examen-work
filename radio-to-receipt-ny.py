@@ -9,15 +9,16 @@ from typing import Optional
 
 import vlc
 
-
 from pdf_printer import print_lines_as_pdf
+
+
 
 # NOTE: Den här versionen gör:
 
 # den synkar mot ljudets faktiska uppspelningstid i stället för bara en timer
 # man kan pausa / fortsätta
 # man kan ändra offset live
-# man kan simulera kvittoskrivaren i terminalen
+# man kan simulera kvittoskrivaren i terminalen   cupsctl WebInterface=yes
 
 
 # TODO: behöver installera VLC bindings: python -m pip install python-vlc
@@ -25,18 +26,23 @@ from pdf_printer import print_lines_as_pdf
 # När skriptet körs kan man skriva i terminalen:
 #   pause        -> pausa ljud
 #   resume       -> fortsätt ljud
-#   offset 0.3   -> skriv ut text 0.3 sek tidigare
-#   offset -0.2  -> skriv ut text 0.2 sek senare
+#   offset +     -> skriv ut text 0.3 sek tidigare
+#   offset -     -> skriv ut text -0.2 sek senare
 #   status       -> visa uppspelningstid och offset
 #   quit         -> avsluta
 
-# kör SKRIPTET:
+# kör SKRIPTET i Terminalen:
 #   source .venv/bin/activate
 #   python radio-to-receipt-ny.py
 #
 # avsluta SKRIPTET:
 #   quit
 
+
+# köra SKRIPTET MED PDF-UTSKRIFT (om USE_PDF_PRINTING är True):
+# source .venv/bin/activate
+# lpstat -d -p
+# python radio-to-receipt-ny.py
 
 # =========================
 # KONFIG
@@ -48,10 +54,10 @@ JSON_FILE = "spraket_ai_sync_segments.json"
 DRY_RUN = False
 
 # Sätt skrivarnamn om du vill skriva ut på riktigt
-PRINTER_NAME = "Star_STSP143__STR_T_001_"   # eller None Star_TSP100III
+PRINTER_NAME = "Star_TSP143__STR_T_001_"   # eller None Star_TSP100III  Star_TSP143__STR_T_001_
 
 # För 80 mm kvitto är ungefär 42–48 tecken ofta rimligt
-RECEIPT_WIDTH = 42
+RECEIPT_WIDTH = 52
 
 # Extra tomrader efter sista raden i en chunk
 EXTRA_FEED_LINES = 2
@@ -66,7 +72,7 @@ POLL_INTERVAL = 0.05
 
 # PDF-PRINTER KONFIG
 PDF_FONT_NAME = "Helvetica"
-PDF_FONT_SIZE = 18
+PDF_FONT_SIZE = 8
 USE_PDF_PRINTING = True
 
 
@@ -262,8 +268,8 @@ def print_help() -> None:
     print("Kommandon under körning:")
     print("  pause        -> pausa ljud")
     print("  resume       -> fortsätt ljud")
-    print("  offset +   -> skriv ut text 0.3 sek tidigare")
-    print("  offset -  -> skriv ut text 0.2 sek senare")
+    print("  offset +     -> skriv ut text 0.3 sek tidigare")
+    print("  offset -     -> skriv ut text 0.2 sek senare")
     print("  status       -> visa uppspelningstid och offset")
     print("  quit         -> avsluta")
     print()
@@ -387,6 +393,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 ## ------------------------------------------------------------------ ##
