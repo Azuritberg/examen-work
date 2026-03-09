@@ -222,12 +222,6 @@ def send_line_to_printer(text: str, printer_name: Optional[str] = None, is_last_
     )
 
 
-# def print_or_send_line(text: str, printer_name: Optional[str], dry_run: bool, is_last_line_in_chunk: bool) -> None:
-#     if dry_run:
-#         simulate_printer_output_line(text, is_last_line_in_chunk)
-#     else:
-#         send_line_to_printer(text, printer_name, is_last_line_in_chunk)
-
 def print_or_send_line(text: str, printer_name: Optional[str], dry_run: bool, is_last_line_in_chunk: bool) -> None:
     if dry_run:
         simulate_printer_output_line(text, is_last_line_in_chunk)
