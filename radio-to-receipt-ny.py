@@ -71,8 +71,10 @@ POLL_INTERVAL = 0.05
 
 
 # PDF-PRINTER KONFIG
+PDF_FONT_PATH = None      # Exempel: "path/to/custom_font.ttf"  "/Library/Fonts/Arial.ttf"
 PDF_FONT_NAME = "Helvetica"
 PDF_FONT_SIZE = 8
+PDF_LINE_SPACING = 1.2
 USE_PDF_PRINTING = True
 
 
@@ -237,6 +239,8 @@ def print_or_send_line(text: str, printer_name: Optional[str], dry_run: bool, is
                 printer_name=printer_name,
                 font_size=PDF_FONT_SIZE,
                 font_name=PDF_FONT_NAME,
+                font_path=PDF_FONT_PATH,
+                line_spacing=PDF_LINE_SPACING,
             )
         else:
             send_line_to_printer(text, printer_name, is_last_line_in_chunk)
