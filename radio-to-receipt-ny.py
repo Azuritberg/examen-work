@@ -57,7 +57,7 @@ DRY_RUN = False
 PRINTER_NAME = "Star_TSP143__STR_T_001_"   # eller None Star_TSP100III  Star_TSP143__STR_T_001_
 
 # För 80 mm kvitto är ungefär 42–48 tecken ofta rimligt
-RECEIPT_WIDTH = 52
+RECEIPT_WIDTH = 48
 
 # Extra tomrader efter sista raden i en chunk
 EXTRA_FEED_LINES = 2
@@ -266,8 +266,8 @@ def print_help() -> None:
     print("Kommandon under körning:")
     print("  pause        -> pausa ljud")
     print("  resume       -> fortsätt ljud")
-    print("  offset +     -> skriv ut text 0.3 sek tidigare")
-    print("  offset -     -> skriv ut text 0.2 sek senare")
+    print("  offset  0.2  -> skriv ut text 0.3 sek tidigare")
+    print("  offset -0.2  -> skriv ut text 0.2 sek senare")
     print("  status       -> visa uppspelningstid och offset")
     print("  quit         -> avsluta")
     print()

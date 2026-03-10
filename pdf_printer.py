@@ -16,6 +16,8 @@ PDF_RIGHT_MARGIN_MM = 3
 PDF_TOP_MARGIN_MM = 4
 PDF_BOTTOM_MARGIN_MM = 4
 
+PDF_FONT_SIZE = 8
+
 # Standardvärden, kan skrivas över från huvudfilen
 PDF_LINE_SPACING = 1.2
 PDF_FONT_PATH: Optional[str] = None
