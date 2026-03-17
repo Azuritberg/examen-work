@@ -23,44 +23,98 @@ from variant_algoritm_schedul import (
     preset_only_critical,
     preset_only_hallucinated,
     preset_only_authoritative,
-    preset_random_per_chunk,
-    preset_random_every_two_chunks,
-    preset_original_then_mixed_per_chunk,
+    preset_random_per_segment,
+    preset_random_per_minute,
+    preset_original_then_mixed,
+    preset_authoritative_often,
+    preset_hallucinations_rare,
 )
 
+
+
+# NOTE: Den här versionen gör:
+
+# den synkar mot ljudets faktiska uppspelningstid i stället för bara en timer
+# man kan pausa / fortsätta
+# man kan ändra offset live
+# man kan simulera kvittoskrivaren i terminalen   cupsctl WebInterface=yes
+# den skriver ut hela chunks/block i stället för rad för rad
+# den kan läsa nested JSON-struktur med variants per segment
+# den är nu kopplad till en separat scheduler-fil som väljer variant automatiskt
+# introduktionen skrivs ut via en separat PDF-layout i pdf_printer.py
+
+
+# TODO: behöver installera VLC bindings: python -m pip install python-vlc
+
+# När skriptet körs kan man skriva i terminalen:
+#   pause        -> pausa ljud
+#   resume       -> fortsätt ljud
+#   offset +     -> skriv ut text 0.3 sek tidigare
+#   offset -     -> skriv ut text -0.2 sek senare
+#   status       -> visa uppspelningstid och offset
+#   quit         -> avsluta
+
+# kör SKRIPTET i Terminalen:
+#   source .venv/bin/activate
+#   python radio_to_receipt_main.py
+#
+# avsluta SKRIPTET:
+#   quit
+
+
+# köra SKRIPTET MED PDF-UTSKRIFT (om USE_PDF_PRINTING är True):
+# source .venv/bin/activate
+# lpstat -d -p
+# python radio_to_receipt_main.py
+
+# =========================
+# KONFIG
+# =========================
 JSON_FILE = "spraket_ai_variant_nested.json"
 
-# preset_only_original()                    # Använd alltid originaltexten
-# preset_only_critical()                    # Använd alltid den kritiska varianten 
-# preset_only_hallucinated()                # Använd alltid den hallucinerade varianten 
-# preset_only_authoritative()               # Använd alltid den auktoritära varianten 
-# preset_random_per_chunk()                 # Välj en slumpmässig variant per chunk
-# preset_random_every_two_chunks()          # Välj en slumpmässig variant every two chunks
-# preset_original_then_mixed_per_chunk()    # Använd originaltexten första chunken och blandade varianter för resten
+# Välj preset här för att testa olika upplägg:
+#
+# preset_only_original()        -> alltid originaltexten
+# preset_only_critical()        -> endast kritiska ändringar 
+# preset_only_hallucinated()    -> endast hallucinationer
+# preset_only_authoritative()   -> endast auktoritativa ändringar
+# preset_random_per_segment()   -> slumpmässig variant per segment
+# preset_random_per_minute()    -> slumpmässig variant varje minut
+# preset_original_then_mixed()  -> börjar med original, övergår sedan till blandat
+# preset_authoritative_often()  -> ofta auktoritativa ändringar, ibland original
+# preset_hallucinations_rare()  -> sällan hallucinationer, oftast original eller auktoritativa
+#
+SCHEDULER_PRESET = preset_random_per_segment()
 
-SCHEDULER_PRESET = preset_random_every_two_chunks()     # Välj preset här
+# True = simulera skrivare i terminalen
+# False = skicka till kvittoskrivare via lp
+DRY_RUN = False
 
-DRY_RUN = False      # True = Simulera skrivare i terminalen
-                     # False = Skicka till kvittoskrivare via lp
+# Sätt skrivarnamn om du vill skriva ut på riktigt
+PRINTER_NAME = "Star_TSP143__STR_T_001_"   # eller None Star_TSP100III  Star_TSP143__STR_T_001_
 
-PRINTER_NAME = "Star_TSP143__STR_T_001_"
+# För 80 mm kvitto är ungefär 42–48 tecken ofta rimligt
+RECEIPT_WIDTH = 48
 
-RECEIPT_WIDTH = 48            # Antal tecken per rad i kvittot.
-POLL_INTERVAL = 0.02          # Hur ofta vi kollar tiden (sekunder)
+# Extra tomrader efter sista raden i en chunk
+EXTRA_FEED_LINES = 2
 
-GLOBAL_AUDIO_OFFSET = 0.5     # Sekunder att justera utskriftstidpunkten i förhållande till ljudet. 
-                              # Positivt värde gör att texten skrivs ut tidigare, negativt gör att den skrivs ut senare. 
-                              # Kan ändras under körning med "offset" kommando.
+# Positivt värde = text tidigare
+# Negativt värde = text senare
+GLOBAL_AUDIO_OFFSET = 1.0
 
-CHUNK_LEAD_SECONDS = 5.0      # Hur många sekunder innan en chunk ska skrivas ut, i förhållande till när den hörs i ljudet. 
+# Hur ofta schedul kollar om något ska skrivas ut
+POLL_INTERVAL = 0.02
 
 
-PDF_FONT_PATH = None
+# PDF-PRINTER KONFIG
+PDF_FONT_PATH = None      # Exempel: "path/to/custom_font.ttf"  "/Library/Fonts/Arial.ttf"
 PDF_FONT_NAME = "Helvetica"
-PDF_FONT_SIZE = 8.2            # Font size i PDF-utskriften.
-PDF_LINE_SPACING = 1.3         # 1.2 är standard, öka för mer luft mellan raderna
-USE_PDF_PRINTING = True        # Om True, använd PDF-utskrift även för chunk-utskriften. Om False, använd vanlig textutskrift via lp.
+PDF_FONT_SIZE = 8.5
+PDF_LINE_SPACING = 1.2
+USE_PDF_PRINTING = True
 
+# INTRO-PDF KONFIG
 INTRO_LOGO_FONT_NAME = "RacingSansOne"
 INTRO_LOGO_FONT_PATH = "fonts/RacingSansOne-Regular.ttf"
 INTRO_LOGO_FONT_SIZE = 28
@@ -73,28 +127,38 @@ INTRO_COUNTDOWN_FONT_NAME = "Helvetica"
 INTRO_COUNTDOWN_FONT_PATH = None
 INTRO_COUNTDOWN_FONT_SIZE = 9
 
-INTRO_LOGO_TOP_MARGIN_MM = 30       # Extra top-margin för logon i intro-PDF:en
-INTRO_BODY_TOP_GAP_MM = 22          # Extra gap mellan logon och brödtexten
-INTRO_PARAGRAPH_GAP_MM = 3          # Extra gap mellan paragrafer
-INTRO_COUNTDOWN_GAP_MM = 4          # Extra gap mellan brödtexten och nedräkningen
-INTRO_BOTTOM_WAVE_GAP_MM = 30       # Extra gap mellan nedräkningen och våglinjen längst ner i intro-PDF:en
-INTRO_BOTTOM_WHITESPACE_MM = 10     # Extra whitespace i botten av intro-PDF:en
-INTRO_PAGE_HEIGHT_MM = 280          # Höjden på intro-PDF:en i mm. Ändra för att få mer eller mindre whitespace i botten av sidan.
+INTRO_LOGO_TOP_MARGIN_MM = 30        # mellanrum från toppen av sidan till logotypen
+INTRO_BODY_TOP_GAP_MM = 22           # mellanrum mellan logo och text
+INTRO_PARAGRAPH_GAP_MM = 3           # mellanrum mellan paragrafer
+INTRO_COUNTDOWN_GAP_MM = 4           # mellanrum mellan text och countdown
+INTRO_BOTTOM_WAVE_GAP_MM = 30        # mellanrum mellan countdown och våglinje
+INTRO_BOTTOM_WHITESPACE_MM = 10      # extra tomrum efter våglinjen innan slutet av sidan  
 
-BLOCK_TOP_BORDER = True             # Om True, rita en horisontell linje av BLOCK_BORDER_CHAR ovanför varje chunk
+INTRO_PAGE_HEIGHT_MM = 280           # sidhøjden i mm
+
+
+# BLOCK-UTSKRIFT KONFIG
+BLOCK_TOP_BORDER = True
 BLOCK_BOTTOM_BORDER = True
 BLOCK_BORDER_CHAR = "-"
 BLOCK_BORDER_WIDTH = RECEIPT_WIDTH
+
+# Extra whitespace efter varje block
+# Testa 8–12 beroende på hur mycket luft du vill ha
 BLOCK_FEED_LINES = 12
+
+# NY: extra tomrader före första riktiga segmentet
 FIRST_SEGMENT_PRE_BLANK_LINES = 10
 
-CHUNK_GAP_PRE_BLANK_LINES = 4       # Extra whitespace efter varje chunk
 
-
+# =========================
+# HJÄLPFUNKTIONER
+# =========================
 def load_data(json_path: str) -> dict:
     path = Path(json_path)
     if not path.exists():
         raise FileNotFoundError(f"JSON-filen hittades inte: {json_path}")
+
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -103,8 +167,10 @@ def resolve_audio_path(data: dict, json_path: str) -> Path:
     audio_name = data["program"]["audio_file"]
     json_dir = Path(json_path).resolve().parent
     audio_path = (json_dir / audio_name).resolve()
+
     if not audio_path.exists():
         raise FileNotFoundError(f"Ljudfilen hittades inte: {audio_path}")
+
     return audio_path
 
 
@@ -114,6 +180,7 @@ def wrap_text_to_lines(text: str, width: int = RECEIPT_WIDTH) -> list[str]:
 
     for paragraph in paragraphs:
         paragraph = paragraph.strip()
+
         if not paragraph:
             lines.append("")
             continue
@@ -134,6 +201,9 @@ def wrap_text_to_lines(text: str, width: int = RECEIPT_WIDTH) -> list[str]:
 
 
 def format_chunk_as_block(text: str, width: int = RECEIPT_WIDTH) -> list[str]:
+    """
+    Formaterar en chunk som ett tydligt block med linje ovanför/under.
+    """
     wrapped_lines = wrap_text_to_lines(text, width)
     block_lines: list[str] = []
 
@@ -148,50 +218,30 @@ def format_chunk_as_block(text: str, width: int = RECEIPT_WIDTH) -> list[str]:
     return block_lines
 
 
-def build_chunk_schedule(data: dict) -> list[dict]:
-    schedule = []
+def build_segment_schedule(data: dict) -> list[dict]:
+    """
+    Bygger en segmentlista från nested JSON.
+    Själva variantvalet görs senare av schedulern.
+    """
+    segments = []
 
     for segment in data["segments"]:
         segment_start = float(segment["start_seconds"])
-        variants = segment.get("variants", {})
-        original_variant = variants.get("original", {})
-        original_chunks = original_variant.get("print_chunks", [])
 
-        for chunk in original_chunks:
-            chunk_id = int(chunk["chunk_id"])
-            offset_seconds = float(chunk["offset_seconds"])
+        segments.append({
+            "id": segment["id"],
+            "start_time": segment["start_time"],
+            "start_seconds": segment_start,
+            "duration_seconds": float(segment["duration_seconds"]),
+            "end_time": segment["end_time"],
+            "end_seconds": float(segment["end_seconds"]),
+            "speaker": segment.get("speaker"),
+            "variants": segment.get("variants", {}),
+            "_printed": False,
+        })
 
-            schedule.append({
-                "segment": segment,
-                "chunk": {
-                    "chunk_id": chunk_id,
-                    "offset_seconds": offset_seconds,
-                },
-                "print_time": segment_start + offset_seconds,
-            })
-
-    schedule.sort(key=lambda item: item["print_time"])
-    return schedule
-
-
-def get_chunk_text_for_variant(segment: dict, variant_name: str, chunk_id: int) -> str:
-    variants = segment.get("variants", {})
-    if variant_name not in variants:
-        available = ", ".join(variants.keys()) if variants else "inga"
-        raise KeyError(
-            f"Variant '{variant_name}' saknas i segment {segment['id']}. "
-            f"Tillgängliga varianter: {available}"
-        )
-
-    variant_chunks = variants[variant_name].get("print_chunks", [])
-    for chunk in variant_chunks:
-        if int(chunk["chunk_id"]) == int(chunk_id):
-            return chunk.get("text", "").strip()
-
-    raise ValueError(
-        f"Kunde inte hitta chunk_id {chunk_id} i variant '{variant_name}' "
-        f"för segment {segment['id']}."
-    )
+    segments.sort(key=lambda item: item["start_seconds"])
+    return segments
 
 
 def simulate_printer_output_block(lines: list[str]) -> None:
@@ -200,7 +250,10 @@ def simulate_printer_output_block(lines: list[str]) -> None:
     print("\n" * BLOCK_FEED_LINES, end="")
 
 
-def send_block_to_printer(lines: list[str], printer_name: Optional[str] = None) -> None:
+def send_block_to_printer(
+    lines: list[str],
+    printer_name: Optional[str] = None
+) -> None:
     receipt_text = "\n".join(lines) + "\n"
     receipt_text += "\n" * BLOCK_FEED_LINES
 
@@ -209,16 +262,28 @@ def send_block_to_printer(lines: list[str], printer_name: Optional[str] = None) 
         cmd.extend(["-d", printer_name])
     cmd.append("-")
 
-    subprocess.run(cmd, input=receipt_text, text=True, check=True)
+    subprocess.run(
+        cmd,
+        input=receipt_text,
+        text=True,
+        check=True
+    )
 
 
-def print_or_send_block(text: str, printer_name: Optional[str], dry_run: bool, pre_blank_lines: int = 0) -> None:
+def print_or_send_block(
+    text: str,
+    printer_name: Optional[str],
+    dry_run: bool,
+    pre_blank_lines: int = 0
+) -> None:
     block_lines = []
 
     if pre_blank_lines > 0:
         block_lines.extend([""] * pre_blank_lines)
 
     block_lines.extend(format_chunk_as_block(text, RECEIPT_WIDTH))
+
+    # lägg till tomrader efter blocket
     block_lines.extend([""] * BLOCK_FEED_LINES)
 
     if dry_run:
@@ -238,10 +303,21 @@ def print_or_send_block(text: str, printer_name: Optional[str], dry_run: bool, p
 
 
 def print_intro(printer_name: Optional[str], dry_run: bool) -> None:
+    """
+    Skriver ut introduktionen.
+    Vid DRY_RUN visas en enkel terminalversion.
+    Vid riktig körning används speciallayoutad intro-PDF.
+    """
     countdown_text = INTRO_COUNTDOWN_TEMPLATE.format(seconds=INTRO_DELAY_SECONDS)
 
     if dry_run:
-        terminal_lines = ["", "", INTRO_LOGO.center(RECEIPT_WIDTH), "", ""]
+        terminal_lines = [
+            "",
+            "",
+            INTRO_LOGO.center(RECEIPT_WIDTH),
+            "",
+            "",
+        ]
         terminal_lines.extend(wrap_text_to_lines(INTRO_TEXT, RECEIPT_WIDTH))
         terminal_lines.append("")
         terminal_lines.append("")
@@ -285,11 +361,17 @@ def get_player_position_seconds(player: vlc.MediaPlayer) -> float:
 
 
 def read_command_nonblocking() -> Optional[str]:
+    """
+    Läser ett kommando från terminalen om användaren har skrivit något.
+    Returnerar None om inget kommando finns redo.
+    """
     ready, _, _ = select.select([sys.stdin], [], [], 0)
+
     if ready:
         line = sys.stdin.readline()
         if line:
             return line.strip()
+
     return None
 
 
@@ -297,13 +379,40 @@ def print_help() -> None:
     print("Kommandon under körning:")
     print("  pause        -> pausa ljud")
     print("  resume       -> fortsätt ljud")
-    print("  offset  0.2  -> skriv ut text 0.2 sek tidigare")
+    print("  offset  0.2  -> skriv ut text 0.3 sek tidigare")
     print("  offset -0.2  -> skriv ut text 0.2 sek senare")
     print("  status       -> visa uppspelningstid och offset")
     print("  quit         -> avsluta")
     print()
 
 
+def choose_text_for_segment(segment: dict, scheduler: VariantScheduler, current_time: float) -> tuple[str, str]:
+    """
+    Frågar schedulern vilken variant som ska användas för segmentet
+    och hämtar text_full för den varianten.
+    """
+    variant_name = scheduler.choose_variant(segment=segment, current_time=current_time)
+
+    variants = segment.get("variants", {})
+    if variant_name not in variants:
+        available = ", ".join(variants.keys()) if variants else "inga"
+        raise KeyError(
+            f"Variant '{variant_name}' saknas i segment {segment['id']}. "
+            f"Tillgängliga varianter: {available}"
+        )
+
+    text = variants[variant_name].get("text_full", "").strip()
+    if not text:
+        raise ValueError(
+            f"Variant '{variant_name}' i segment {segment['id']} saknar text_full."
+        )
+
+    return variant_name, text
+
+
+# =========================
+# HUVUDPROGRAM
+# =========================
 def main() -> None:
     global GLOBAL_AUDIO_OFFSET
 
@@ -312,14 +421,14 @@ def main() -> None:
     data = load_data(JSON_FILE)
     audio_path = resolve_audio_path(data, JSON_FILE)
 
-    chunk_schedule = build_chunk_schedule(data)
-    if not chunk_schedule:
-        raise ValueError("Inga chunks hittades i JSON-filen.")
+    segment_schedule = build_segment_schedule(data)
+    if not segment_schedule:
+        raise ValueError("Inga segment hittades i JSON-filen.")
 
     print("Program:", data["program"].get("title", "Okänd titel"))
     print("Ljudfil:", audio_path.name)
     print("Scheduler-strategi:", SCHEDULER_PRESET.strategy)
-    print("Antal chunks att skriva ut:", len(chunk_schedule))
+    print("Antal segment/block att skriva ut:", len(segment_schedule))
     print("Läge:", "SIMULERAD SKRIVARE" if DRY_RUN else "RIKTIG SKRIVARE")
     print("Kvittobredd:", RECEIPT_WIDTH, "tecken")
     print("Start-offset:", GLOBAL_AUDIO_OFFSET, "sek")
@@ -327,7 +436,10 @@ def main() -> None:
     print_help()
 
     print("Skriver ut introduktion...")
-    print_intro(printer_name=PRINTER_NAME, dry_run=DRY_RUN)
+    print_intro(
+        printer_name=PRINTER_NAME,
+        dry_run=DRY_RUN,
+    )
 
     print(f"Väntar {INTRO_DELAY_SECONDS} sekunder innan ljudet startar...")
     time.sleep(INTRO_DELAY_SECONDS)
@@ -366,14 +478,14 @@ def main() -> None:
                             GLOBAL_AUDIO_OFFSET = float(parts[1])
                             print(f"Ny offset: {GLOBAL_AUDIO_OFFSET:.2f} sek")
                         except ValueError:
-                            print("Kunde inte läsa offset. Exempel: offset 0.2")
+                            print("Kunde inte läsa offset. Exempel: offset 0.3")
 
                 elif command == "status":
                     pos = get_player_position_seconds(player)
                     print(
                         f"Status -> tid: {pos:.2f}s | "
                         f"offset: {GLOBAL_AUDIO_OFFSET:.2f}s | "
-                        f"nästa chunk: {next_index + 1}/{len(chunk_schedule)}"
+                        f"nästa block: {next_index + 1}/{len(segment_schedule)}"
                     )
 
                 elif command == "quit":
@@ -392,30 +504,20 @@ def main() -> None:
 
             current_pos = get_player_position_seconds(player)
 
-            while next_index < len(chunk_schedule):
-                item = chunk_schedule[next_index]
-                target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET - CHUNK_LEAD_SECONDS)
-                #target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET)
+            while next_index < len(segment_schedule):
+                segment = segment_schedule[next_index]
+                target_time = max(0.0, segment["start_seconds"] - GLOBAL_AUDIO_OFFSET)
 
                 if current_pos >= target_time:
-                    segment = item["segment"]
-                    chunk = item["chunk"]
-
-                    variant_name = scheduler.choose_variant(
+                    variant_name, text = choose_text_for_segment(
                         segment=segment,
-                        chunk=chunk,
+                        scheduler=scheduler,
                         current_time=current_pos
                     )
 
-                    text = get_chunk_text_for_variant(
-                        segment=segment,
-                        variant_name=variant_name,
-                        chunk_id=chunk["chunk_id"]
-                    )
+                    print(f"[Segment {segment['id']}] variant: {variant_name}")
 
-                    print(f"[Segment {segment['id']} chunk {chunk['chunk_id']}] variant: {variant_name}")
-
-                    pre_blank_lines = FIRST_SEGMENT_PRE_BLANK_LINES if next_index == 0 else CHUNK_GAP_PRE_BLANK_LINES
+                    pre_blank_lines = FIRST_SEGMENT_PRE_BLANK_LINES if next_index == 0 else 0
 
                     print_or_send_block(
                         text=text,
@@ -429,7 +531,7 @@ def main() -> None:
                     break
 
             state = player.get_state()
-            if next_index >= len(chunk_schedule):
+            if next_index >= len(segment_schedule):
                 if state in (vlc.State.Ended, vlc.State.Stopped, vlc.State.NothingSpecial):
                     break
 

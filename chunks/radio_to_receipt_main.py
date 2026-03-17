@@ -30,65 +30,52 @@ from variant_algoritm_schedul import (
 
 JSON_FILE = "spraket_ai_variant_nested.json"
 
-# preset_only_original()                    # Använd alltid originaltexten
-# preset_only_critical()                    # Använd alltid den kritiska varianten 
-# preset_only_hallucinated()                # Använd alltid den hallucinerade varianten 
-# preset_only_authoritative()               # Använd alltid den auktoritära varianten 
-# preset_random_per_chunk()                 # Välj en slumpmässig variant per chunk
-# preset_random_every_two_chunks()          # Välj en slumpmässig variant every two chunks
-# preset_original_then_mixed_per_chunk()    # Använd originaltexten första chunken och blandade varianter för resten
+# preset_only_original()
+# preset_only_critical()
+# preset_only_hallucinated()
+# preset_only_authoritative()
+# preset_random_per_chunk()
+# preset_random_every_two_chunks()
+# preset_original_then_mixed_per_chunk()
 
-SCHEDULER_PRESET = preset_random_every_two_chunks()     # Välj preset här
+SCHEDULER_PRESET = preset_random_every_two_chunks()
 
-DRY_RUN = False      # True = Simulera skrivare i terminalen
-                     # False = Skicka till kvittoskrivare via lp
-
+DRY_RUN = False
 PRINTER_NAME = "Star_TSP143__STR_T_001_"
 
-RECEIPT_WIDTH = 48            # Antal tecken per rad i kvittot.
-POLL_INTERVAL = 0.02          # Hur ofta vi kollar tiden (sekunder)
-
-GLOBAL_AUDIO_OFFSET = 0.5     # Sekunder att justera utskriftstidpunkten i förhållande till ljudet. 
-                              # Positivt värde gör att texten skrivs ut tidigare, negativt gör att den skrivs ut senare. 
-                              # Kan ändras under körning med "offset" kommando.
-
-CHUNK_LEAD_SECONDS = 5.0      # Hur många sekunder innan en chunk ska skrivas ut, i förhållande till när den hörs i ljudet. 
-
+RECEIPT_WIDTH = 48
+GLOBAL_AUDIO_OFFSET = 1.0
+POLL_INTERVAL = 0.02
 
 PDF_FONT_PATH = None
 PDF_FONT_NAME = "Helvetica"
-PDF_FONT_SIZE = 8.2            # Font size i PDF-utskriften.
-PDF_LINE_SPACING = 1.3         # 1.2 är standard, öka för mer luft mellan raderna
-USE_PDF_PRINTING = True        # Om True, använd PDF-utskrift även för chunk-utskriften. Om False, använd vanlig textutskrift via lp.
+PDF_FONT_SIZE = 8.5
+PDF_LINE_SPACING = 1.2
+USE_PDF_PRINTING = True
 
 INTRO_LOGO_FONT_NAME = "RacingSansOne"
 INTRO_LOGO_FONT_PATH = "fonts/RacingSansOne-Regular.ttf"
 INTRO_LOGO_FONT_SIZE = 28
-
 INTRO_BODY_FONT_NAME = "Helvetica"
 INTRO_BODY_FONT_PATH = None
 INTRO_BODY_FONT_SIZE = 9
-
 INTRO_COUNTDOWN_FONT_NAME = "Helvetica"
 INTRO_COUNTDOWN_FONT_PATH = None
 INTRO_COUNTDOWN_FONT_SIZE = 9
+INTRO_LOGO_TOP_MARGIN_MM = 30
+INTRO_BODY_TOP_GAP_MM = 22
+INTRO_PARAGRAPH_GAP_MM = 3
+INTRO_COUNTDOWN_GAP_MM = 4
+INTRO_BOTTOM_WAVE_GAP_MM = 30
+INTRO_BOTTOM_WHITESPACE_MM = 10
+INTRO_PAGE_HEIGHT_MM = 280
 
-INTRO_LOGO_TOP_MARGIN_MM = 30       # Extra top-margin för logon i intro-PDF:en
-INTRO_BODY_TOP_GAP_MM = 22          # Extra gap mellan logon och brödtexten
-INTRO_PARAGRAPH_GAP_MM = 3          # Extra gap mellan paragrafer
-INTRO_COUNTDOWN_GAP_MM = 4          # Extra gap mellan brödtexten och nedräkningen
-INTRO_BOTTOM_WAVE_GAP_MM = 30       # Extra gap mellan nedräkningen och våglinjen längst ner i intro-PDF:en
-INTRO_BOTTOM_WHITESPACE_MM = 10     # Extra whitespace i botten av intro-PDF:en
-INTRO_PAGE_HEIGHT_MM = 280          # Höjden på intro-PDF:en i mm. Ändra för att få mer eller mindre whitespace i botten av sidan.
-
-BLOCK_TOP_BORDER = True             # Om True, rita en horisontell linje av BLOCK_BORDER_CHAR ovanför varje chunk
+BLOCK_TOP_BORDER = True
 BLOCK_BOTTOM_BORDER = True
 BLOCK_BORDER_CHAR = "-"
 BLOCK_BORDER_WIDTH = RECEIPT_WIDTH
 BLOCK_FEED_LINES = 12
 FIRST_SEGMENT_PRE_BLANK_LINES = 10
-
-CHUNK_GAP_PRE_BLANK_LINES = 4       # Extra whitespace efter varje chunk
 
 
 def load_data(json_path: str) -> dict:
@@ -394,8 +381,7 @@ def main() -> None:
 
             while next_index < len(chunk_schedule):
                 item = chunk_schedule[next_index]
-                target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET - CHUNK_LEAD_SECONDS)
-                #target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET)
+                target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET)
 
                 if current_pos >= target_time:
                     segment = item["segment"]
@@ -415,7 +401,7 @@ def main() -> None:
 
                     print(f"[Segment {segment['id']} chunk {chunk['chunk_id']}] variant: {variant_name}")
 
-                    pre_blank_lines = FIRST_SEGMENT_PRE_BLANK_LINES if next_index == 0 else CHUNK_GAP_PRE_BLANK_LINES
+                    pre_blank_lines = FIRST_SEGMENT_PRE_BLANK_LINES if next_index == 0 else 0
 
                     print_or_send_block(
                         text=text,

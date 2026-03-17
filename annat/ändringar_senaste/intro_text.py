@@ -2,7 +2,7 @@ INTRO_DELAY_SECONDS = 15
 
 INTRO_LOGO = "SMART RADIO"
 
-INTRO_TEXT = """Hej hej!
+INTRO_TEXT = """Hej 👋
 
 Välkommen till Smart Radio.
 
@@ -12,7 +12,6 @@ Samtidigt kommer ett AI-baserat system att lyssna på samma program och generera
 
 Under upplevelsen kan du ta del av både det du hör och de texter som produceras av systemet.
 
-När programmet är slut kommer vi att ställa några frågor om din upplevelse."""
+När programmet är slut kommer vi att ställa några frågor om din upplevelse.
 
-INTRO_COUNTDOWN_TEMPLATE = "Programmet startar om {seconds} sekunder...."
-INTRO_WAVE = "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~"
+Programmet startar om 15 sekunder..."""
