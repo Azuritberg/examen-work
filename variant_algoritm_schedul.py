@@ -13,6 +13,7 @@ Preset-idéer som stöds:
 - slumpmässig variant per chunk
 - samma variant i grupper om 2 chunks
 - tidsstyrd blandning per chunk
+- realistisk jämn fördelning (med regler för att undvika för mycket avvikelse i rad)
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 from typing import Optional
+
+from anyio import current_time
 
 
 @dataclass
@@ -94,6 +97,9 @@ class VariantScheduler:
 
         if strategy == "timeline_mixed_per_chunk":
             return self._choose_timeline_mixed_per_chunk(segment, chunk, current_time)
+        
+        if strategy == "realistic_even_flow":
+            return self._choose_realistic_even_flow(segment, chunk, current_time)
 
         raise ValueError(f"Okänd strategy: {strategy}")
 
@@ -211,6 +217,69 @@ class VariantScheduler:
         return self._choose_weighted_for_chunk(segment, chunk, weights)
 
 
+    def _choose_realistic_even_flow(self, segment: dict, chunk: dict, current_time: float) -> str:
+        key = self._chunk_key(segment, chunk)
+
+        # Om redan valt → returnera (stabilitet)
+        if key in self._chunk_variant_cache:
+            return self._chunk_variant_cache[key]
+
+        # Initiera minne om det saknas
+        if not hasattr(self, "_recent_variants"):
+            self._recent_variants = []
+
+        # ===== REGEL 1: Första två chunks = original =====
+        if len(self._recent_variants) < 2:
+            chosen = "original"
+            self._chunk_variant_cache[key] = chosen
+            self._recent_variants.append(chosen)
+            return chosen
+
+        # ===== REGEL 2: Max 1 avvikelse i rad =====
+        last_variant = self._recent_variants[-1]
+
+        if last_variant != "original":
+            chosen = "original"
+            self._chunk_variant_cache[key] = chosen
+            self._recent_variants.append(chosen)
+            return chosen
+
+        # ===== REGEL 3: Vikter =====
+        weights = {
+            "original": 0.64,       # mer kaos → sänk original  eller  mer subtil → höj original
+            "critical": 0.12,
+            "hallucinated": 0.12,
+            "authoritative_ai": 0.12,
+        }
+
+        available = self._get_available_variants(segment)
+        normalized = normalize_weights(weights, available)
+
+        candidate = weighted_choice(self.rng, normalized)
+
+        # ===== REGEL 4: Hallucinated spacing =====
+        if candidate == "hallucinated":
+            if len(self._recent_variants) >= 2:
+                if self._recent_variants[-2:] == ["hallucinated", "original"]:
+                    candidate = "original"
+
+        # ===== REGEL 5: Authoritative spacing =====
+        if candidate == "authoritative_ai":
+            if len(self._recent_variants) >= 2:
+                if self._recent_variants[-2] == "authoritative_ai":
+                    candidate = "original"
+
+        chosen = candidate
+
+        self._chunk_variant_cache[key] = chosen
+        self._recent_variants.append(chosen)
+
+        # Begränsa minne (så det inte växer okontrollerat)
+        if len(self._recent_variants) > 10:
+            self._recent_variants.pop(0)
+
+        return chosen 
+
 def preset_only_original() -> SchedulerConfig:
     return SchedulerConfig(strategy="fixed", fixed_variant="original", seed=42)
 
@@ -237,3 +306,6 @@ def preset_random_every_two_chunks() -> SchedulerConfig:
 
 def preset_original_then_mixed_per_chunk() -> SchedulerConfig:
     return SchedulerConfig(strategy="timeline_mixed_per_chunk", seed=42)
+
+def preset_realistic_even_flow() -> SchedulerConfig:
+    return SchedulerConfig(strategy="realistic_even_flow",seed=42)

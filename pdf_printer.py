@@ -106,12 +106,16 @@ def _wrap_paragraph_centered(
 
 def create_intro_pdf(
     intro_logo: str,
+    intro_end_logo: str,
     intro_text: str,
     countdown_text: str,
     printer_name: Optional[str] = None,
     logo_font_name: str = "LogoFont",
     logo_font_path: Optional[str] = None,
     logo_font_size: int = 28,
+    end_logo_font_name: str = "LogoFont",
+    end_logo_font_path: Optional[str] = None,
+    end_logo_font_size: int = 20,
     body_font_name: str = "Helvetica",
     body_font_path: Optional[str] = None,
     body_font_size: int = 11,
@@ -123,6 +127,7 @@ def create_intro_pdf(
     paragraph_gap_mm: float = 10,
     countdown_gap_mm: float = 16,
     bottom_wave_gap_mm: float = 8,
+    end_logo_gap_mm: float = 8,
     intro_bottom_whitespace_mm: float = 18,
     intro_page_height_mm: float = 260,
     wave_text: str = "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~",
@@ -135,6 +140,7 @@ def create_intro_pdf(
     - våglinje längst ner
     """
     register_pdf_font_if_needed(logo_font_name, logo_font_path)
+    register_pdf_font_if_needed(end_logo_font_name, end_logo_font_path)
     register_pdf_font_if_needed(body_font_name, body_font_path)
     register_pdf_font_if_needed(countdown_font_name, countdown_font_path)
 
@@ -190,7 +196,13 @@ def create_intro_pdf(
 
     # Våglinje
     y -= bottom_wave_gap_mm * mm
+    c.setFont(countdown_font_name, countdown_font_size)
     c.drawCentredString(page_center_x, y, wave_text)
+
+    # Slutlogga
+    y -= end_logo_gap_mm * mm
+    c.setFont(end_logo_font_name, end_logo_font_size)
+    c.drawCentredString(page_center_x, y, intro_end_logo)
 
     # Extra luft nederst
     y -= intro_bottom_whitespace_mm * mm
@@ -237,12 +249,16 @@ def print_lines_as_pdf(
 
 def print_intro_pdf(
     intro_logo: str,
+    intro_end_logo: str,
     intro_text: str,
     countdown_text: str,
     printer_name: Optional[str] = None,
     logo_font_name: str = "LogoFont",
     logo_font_path: Optional[str] = None,
     logo_font_size: int = 28,
+    end_logo_font_name: str = "LogoFont",
+    end_logo_font_path: Optional[str] = None,
+    end_logo_font_size: int = 20,
     body_font_name: str = "Helvetica",
     body_font_path: Optional[str] = None,
     body_font_size: int = 11,
@@ -254,6 +270,7 @@ def print_intro_pdf(
     paragraph_gap_mm: float = 10,
     countdown_gap_mm: float = 16,
     bottom_wave_gap_mm: float = 8,
+    end_logo_gap_mm: float = 8,
     intro_bottom_whitespace_mm: float = 18,
     intro_page_height_mm: float = 260,
     wave_text: str = "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~",
@@ -263,6 +280,7 @@ def print_intro_pdf(
     """
     pdf_path = create_intro_pdf(
         intro_logo=intro_logo,
+        intro_end_logo=intro_end_logo,
         intro_text=intro_text,
         countdown_text=countdown_text,
         printer_name=printer_name,
@@ -275,11 +293,15 @@ def print_intro_pdf(
         countdown_font_name=countdown_font_name,
         countdown_font_path=countdown_font_path,
         countdown_font_size=countdown_font_size,
+        end_logo_font_name=end_logo_font_name,
+        end_logo_font_path=end_logo_font_path,
+        end_logo_font_size=end_logo_font_size,
         logo_top_margin_mm=logo_top_margin_mm,
         body_top_gap_mm=body_top_gap_mm,
         paragraph_gap_mm=paragraph_gap_mm,
         countdown_gap_mm=countdown_gap_mm,
         bottom_wave_gap_mm=bottom_wave_gap_mm,
+        end_logo_gap_mm=end_logo_gap_mm,
         intro_bottom_whitespace_mm=intro_bottom_whitespace_mm,
         intro_page_height_mm=intro_page_height_mm,
         wave_text=wave_text,

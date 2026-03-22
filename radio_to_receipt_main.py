@@ -12,6 +12,7 @@ import vlc
 from intro_text import (
     INTRO_TEXT,
     INTRO_LOGO,
+    INTRO_END_LOGO,
     INTRO_DELAY_SECONDS,
     INTRO_COUNTDOWN_TEMPLATE,
     INTRO_WAVE,
@@ -26,6 +27,7 @@ from variant_algoritm_schedul import (
     preset_random_per_chunk,
     preset_random_every_two_chunks,
     preset_original_then_mixed_per_chunk,
+    preset_realistic_even_flow,
 )
 
 JSON_FILE = "spraket_ai_variant_nested.json"
@@ -37,10 +39,11 @@ JSON_FILE = "spraket_ai_variant_nested.json"
 # preset_random_per_chunk()                 # Välj en slumpmässig variant per chunk
 # preset_random_every_two_chunks()          # Välj en slumpmässig variant every two chunks
 # preset_original_then_mixed_per_chunk()    # Använd originaltexten första chunken och blandade varianter för resten
+# preset_realistic_even_flow()              # Använden realistisk jämn fördelning av varianter
 
-SCHEDULER_PRESET = preset_random_every_two_chunks()     # Välj preset här
+SCHEDULER_PRESET = preset_realistic_even_flow()     # Välj preset här
 
-DRY_RUN = False      # True = Simulera skrivare i terminalen
+DRY_RUN = True      # True = Simulera skrivare i terminalen
                      # False = Skicka till kvittoskrivare via lp
 
 PRINTER_NAME = "Star_TSP143__STR_T_001_"
@@ -64,6 +67,9 @@ USE_PDF_PRINTING = True        # Om True, använd PDF-utskrift även för chunk-
 INTRO_LOGO_FONT_NAME = "RacingSansOne"
 INTRO_LOGO_FONT_PATH = "fonts/RacingSansOne-Regular.ttf"
 INTRO_LOGO_FONT_SIZE = 28
+
+INTRO_END_LOGO_FONT_SIZE = 20  # End-logo font size i intro-PDF:en
+INTRO_END_LOGO_GAP_MM = 8      # Extra gap mellan slutlogon och nedräkningen i intro-PDF:en
 
 INTRO_BODY_FONT_NAME = "Helvetica"
 INTRO_BODY_FONT_PATH = None
@@ -254,12 +260,16 @@ def print_intro(printer_name: Optional[str], dry_run: bool) -> None:
 
     print_intro_pdf(
         intro_logo=INTRO_LOGO,
+        intro_end_logo=INTRO_END_LOGO,
         intro_text=INTRO_TEXT,
         countdown_text=countdown_text,
         printer_name=printer_name,
         logo_font_name=INTRO_LOGO_FONT_NAME,
         logo_font_path=INTRO_LOGO_FONT_PATH,
         logo_font_size=INTRO_LOGO_FONT_SIZE,
+        end_logo_font_name=INTRO_LOGO_FONT_NAME,
+        end_logo_font_path=INTRO_LOGO_FONT_PATH,
+        end_logo_font_size=INTRO_END_LOGO_FONT_SIZE,
         body_font_name=INTRO_BODY_FONT_NAME,
         body_font_path=INTRO_BODY_FONT_PATH,
         body_font_size=INTRO_BODY_FONT_SIZE,
@@ -271,6 +281,7 @@ def print_intro(printer_name: Optional[str], dry_run: bool) -> None:
         paragraph_gap_mm=INTRO_PARAGRAPH_GAP_MM,
         countdown_gap_mm=INTRO_COUNTDOWN_GAP_MM,
         bottom_wave_gap_mm=INTRO_BOTTOM_WAVE_GAP_MM,
+        end_logo_gap_mm=INTRO_END_LOGO_GAP_MM,
         intro_bottom_whitespace_mm=INTRO_BOTTOM_WHITESPACE_MM,
         intro_page_height_mm=INTRO_PAGE_HEIGHT_MM,
         wave_text=INTRO_WAVE,
