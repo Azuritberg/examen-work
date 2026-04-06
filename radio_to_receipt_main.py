@@ -30,7 +30,51 @@ from variant_algoritm_schedul import (
     preset_realistic_even_flow,
 )
 
-JSON_FILE = "spraket_ai_variant_nested.json"
+
+# NOTE: Den här versionen gör:
+
+# den synkar mot ljudets faktiska uppspelningstid i stället för bara en timer
+# man kan pausa / fortsätta
+# man kan ändra offset live
+# man kan simulera kvittoskrivaren i terminalen   cupsctl WebInterface=yes
+# den skriver ut hela chunks/block i stället för rad för rad
+# den kan läsa nested JSON-struktur med variants per segment
+# den är nu kopplad till en separat scheduler-fil som väljer variant automatiskt
+
+
+# TODO: behöver installera VLC bindings: python -m pip install python-vlc
+
+# När skriptet körs kan man skriva i terminalen:
+#   pause        -> pausa ljud
+#   resume       -> fortsätt ljud
+#   offset +     -> skriv ut text 0.3 sek tidigare
+#   offset -     -> skriv ut text -0.2 sek senare
+#   status       -> visa uppspelningstid och offset
+#   quit         -> avsluta
+
+# kör SKRIPTET i Terminalen:
+#   source .venv/bin/activate
+#   python radio_to_receipt_main.py
+#
+# avsluta SKRIPTET:
+#   quit
+
+
+# köra SKRIPTET MED PDF-UTSKRIFT (om USE_PDF_PRINTING är True):
+# source .venv/bin/activate
+# lpstat -d -p
+# python radio_to_receipt_main.py
+
+
+# =========================
+# KONFIG
+# =========================
+
+# JSON filen spraket_ai_variant_nested.json = innehåller alla varianter (original, kritisk, hallucinerad, auktoritär) där formuleringarna är twikade ganska mycket från original transkriptet
+
+# JSON filen spraket_ai_variant_nested_NYA_TR.json = innehåller alla varianter (original, kritisk, hallucinerad, auktoritär) och är mer närmare utgångs texten, så vi kommer använda denna i våra intervjuer.
+
+JSON_FILE = "spraket_ai_variant_nested_NYA_TR.json"
 
 # preset_only_original()                    # Använd alltid originaltexten
 # preset_only_critical()                    # Använd alltid den kritiska varianten 
@@ -43,8 +87,8 @@ JSON_FILE = "spraket_ai_variant_nested.json"
 
 SCHEDULER_PRESET = preset_realistic_even_flow()     # Välj preset här
 
-DRY_RUN = True      # True = Simulera skrivare i terminalen
-                     # False = Skicka till kvittoskrivare via lp
+DRY_RUN = False      # True = Simulera skrivare i terminalen
+                    # False = Skicka till kvittoskrivare via lp
 
 PRINTER_NAME = "Star_TSP143__STR_T_001_"
 
@@ -55,10 +99,10 @@ GLOBAL_AUDIO_OFFSET = 0.5     # Sekunder att justera utskriftstidpunkten i förh
                               # Positivt värde gör att texten skrivs ut tidigare, negativt gör att den skrivs ut senare. 
                               # Kan ändras under körning med "offset" kommando.
 
-CHUNK_LEAD_SECONDS = 5.0      # Hur många sekunder innan en chunk ska skrivas ut, i förhållande till när den hörs i ljudet. 
+CHUNK_LEAD_SECONDS = 2.5      # Hur många sekunder innan en chunk ska skrivas ut, i förhållande till när den hörs i ljudet. Hade det innan på 0.5
 
-
-PDF_FONT_PATH = None
+# PDF-PRINTER KONFIG
+PDF_FONT_PATH = None            # Exempel: "path/to/custom_font.ttf"  "/Library/Fonts/Arial.ttf"
 PDF_FONT_NAME = "Helvetica"
 PDF_FONT_SIZE = 8.2            # Font size i PDF-utskriften.
 PDF_LINE_SPACING = 1.3         # 1.2 är standard, öka för mer luft mellan raderna
@@ -87,6 +131,7 @@ INTRO_BOTTOM_WAVE_GAP_MM = 30       # Extra gap mellan nedräkningen och våglin
 INTRO_BOTTOM_WHITESPACE_MM = 10     # Extra whitespace i botten av intro-PDF:en
 INTRO_PAGE_HEIGHT_MM = 280          # Höjden på intro-PDF:en i mm. Ändra för att få mer eller mindre whitespace i botten av sidan.
 
+# BLOCK-UTSKRIFT KONFIG
 BLOCK_TOP_BORDER = True             # Om True, rita en horisontell linje av BLOCK_BORDER_CHAR ovanför varje chunk
 BLOCK_BOTTOM_BORDER = True
 BLOCK_BORDER_CHAR = "-"
@@ -96,6 +141,10 @@ FIRST_SEGMENT_PRE_BLANK_LINES = 10
 
 CHUNK_GAP_PRE_BLANK_LINES = 4       # Extra whitespace efter varje chunk
 
+
+# =========================
+# HJÄLPFUNKTIONER
+# =========================
 
 def load_data(json_path: str) -> dict:
     path = Path(json_path)
@@ -314,6 +363,10 @@ def print_help() -> None:
     print("  quit         -> avsluta")
     print()
 
+
+# =========================
+# HUVUDPROGRAM
+# =========================
 
 def main() -> None:
     global GLOBAL_AUDIO_OFFSET

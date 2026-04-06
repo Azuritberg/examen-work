@@ -246,10 +246,10 @@ class VariantScheduler:
 
         # ===== REGEL 3: Vikter =====
         weights = {
-            "original": 0.64,       # mer kaos → sänk original  eller  mer subtil → höj original
-            "critical": 0.12,
-            "hallucinated": 0.12,
-            "authoritative_ai": 0.12,
+            "original": 0.40,       # 0.64 mer kaos → sänk original  eller  mer subtil → höj original
+            "critical": 0.20,
+            "hallucinated": 0.20,
+            "authoritative_ai": 0.20,
         }
 
         available = self._get_available_variants(segment)
