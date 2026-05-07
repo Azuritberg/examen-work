@@ -364,14 +364,12 @@ def print_help() -> None:
     print()
 
 
-# =========================
-# HUVUDPROGRAM
-# =========================
+# =========================================
+# HUVUDPROGRAM  MED LOOP INFÖR UTSTÄLLNING
+# =========================================
 
 def main() -> None:
     global GLOBAL_AUDIO_OFFSET
-
-    scheduler = VariantScheduler(SCHEDULER_PRESET)
 
     data = load_data(JSON_FILE)
     audio_path = resolve_audio_path(data, JSON_FILE)
@@ -390,121 +388,271 @@ def main() -> None:
     print()
     print_help()
 
-    print("Skriver ut introduktion...")
-    print_intro(printer_name=PRINTER_NAME, dry_run=DRY_RUN)
-
-    print(f"Väntar {INTRO_DELAY_SECONDS} sekunder innan ljudet startar...")
-    time.sleep(INTRO_DELAY_SECONDS)
-
     instance = vlc.Instance()
-    player = instance.media_player_new()
-    media = instance.media_new(str(audio_path))
-    player.set_media(media)
-
-    player.play()
-    time.sleep(0.4)
-
-    next_index = 0
-    paused = False
-    running = True
+    player = None
 
     try:
-        while running:
-            command = read_command_nonblocking()
+        while True:
+            scheduler = VariantScheduler(SCHEDULER_PRESET)
 
-            if command:
-                if command == "pause":
-                    player.pause()
-                    paused = True
-                    print("Pausad.")
+            print("Skriver ut introduktion...")
+            print_intro(printer_name=PRINTER_NAME, dry_run=DRY_RUN)
 
-                elif command == "resume":
-                    player.play()
-                    paused = False
-                    print("Fortsätter.")
+            print(f"Väntar {INTRO_DELAY_SECONDS} sekunder innan ljudet startar...")
+            time.sleep(INTRO_DELAY_SECONDS)
 
-                elif command.startswith("offset "):
-                    parts = command.split(maxsplit=1)
-                    if len(parts) == 2:
-                        try:
-                            GLOBAL_AUDIO_OFFSET = float(parts[1])
-                            print(f"Ny offset: {GLOBAL_AUDIO_OFFSET:.2f} sek")
-                        except ValueError:
-                            print("Kunde inte läsa offset. Exempel: offset 0.2")
+            player = instance.media_player_new()
+            media = instance.media_new(str(audio_path))
+            player.set_media(media)
 
-                elif command == "status":
-                    pos = get_player_position_seconds(player)
-                    print(
-                        f"Status -> tid: {pos:.2f}s | "
-                        f"offset: {GLOBAL_AUDIO_OFFSET:.2f}s | "
-                        f"nästa chunk: {next_index + 1}/{len(chunk_schedule)}"
-                    )
+            player.play()
+            time.sleep(0.4)
 
-                elif command == "quit":
-                    print("Avslutar...")
-                    running = False
+            next_index = 0
+            paused = False
+            running = True
 
-                else:
-                    print("Okänt kommando.")
+            while running:
+                command = read_command_nonblocking()
 
-            if not running:
-                break
+                if command:
+                    if command == "pause":
+                        player.pause()
+                        paused = True
+                        print("Pausad.")
 
-            if paused:
+                    elif command == "resume":
+                        player.play()
+                        paused = False
+                        print("Fortsätter.")
+
+                    elif command.startswith("offset "):
+                        parts = command.split(maxsplit=1)
+                        if len(parts) == 2:
+                            try:
+                                GLOBAL_AUDIO_OFFSET = float(parts[1])
+                                print(f"Ny offset: {GLOBAL_AUDIO_OFFSET:.2f} sek")
+                            except ValueError:
+                                print("Kunde inte läsa offset. Exempel: offset 0.2")
+
+                    elif command == "status":
+                        pos = get_player_position_seconds(player)
+                        print(
+                            f"Status -> tid: {pos:.2f}s | "
+                            f"offset: {GLOBAL_AUDIO_OFFSET:.2f}s | "
+                            f"nästa chunk: {next_index + 1}/{len(chunk_schedule)}"
+                        )
+
+                    elif command == "quit":
+                        print("Avslutar...")
+                        return
+
+                    else:
+                        print("Okänt kommando.")
+
+                if paused:
+                    time.sleep(POLL_INTERVAL)
+                    continue
+
+                current_pos = get_player_position_seconds(player)
+
+                while next_index < len(chunk_schedule):
+                    item = chunk_schedule[next_index]
+                    target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET - CHUNK_LEAD_SECONDS)
+                    #target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET)
+
+                    if current_pos >= target_time:
+                        segment = item["segment"]
+                        chunk = item["chunk"]
+
+                        variant_name = scheduler.choose_variant(
+                            segment=segment,
+                            chunk=chunk,
+                            current_time=current_pos
+                        )
+
+                        text = get_chunk_text_for_variant(
+                            segment=segment,
+                            variant_name=variant_name,
+                            chunk_id=chunk["chunk_id"]
+                        )
+
+                        print(f"[Segment {segment['id']} chunk {chunk['chunk_id']}] variant: {variant_name}")
+
+                        pre_blank_lines = FIRST_SEGMENT_PRE_BLANK_LINES if next_index == 0 else CHUNK_GAP_PRE_BLANK_LINES
+
+                        print_or_send_block(
+                            text=text,
+                            printer_name=PRINTER_NAME,
+                            dry_run=DRY_RUN,
+                            pre_blank_lines=pre_blank_lines,
+                        )
+
+                        next_index += 1
+                    else:
+                        break
+
+                state = player.get_state()
+                if next_index >= len(chunk_schedule):
+                    if state in (vlc.State.Ended, vlc.State.Stopped, vlc.State.NothingSpecial):
+                        player.stop()
+                        print("Programmet är slut. Startar om från början...")
+                        break
+
                 time.sleep(POLL_INTERVAL)
-                continue
-
-            current_pos = get_player_position_seconds(player)
-
-            while next_index < len(chunk_schedule):
-                item = chunk_schedule[next_index]
-                target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET - CHUNK_LEAD_SECONDS)
-                #target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET)
-
-                if current_pos >= target_time:
-                    segment = item["segment"]
-                    chunk = item["chunk"]
-
-                    variant_name = scheduler.choose_variant(
-                        segment=segment,
-                        chunk=chunk,
-                        current_time=current_pos
-                    )
-
-                    text = get_chunk_text_for_variant(
-                        segment=segment,
-                        variant_name=variant_name,
-                        chunk_id=chunk["chunk_id"]
-                    )
-
-                    print(f"[Segment {segment['id']} chunk {chunk['chunk_id']}] variant: {variant_name}")
-
-                    pre_blank_lines = FIRST_SEGMENT_PRE_BLANK_LINES if next_index == 0 else CHUNK_GAP_PRE_BLANK_LINES
-
-                    print_or_send_block(
-                        text=text,
-                        printer_name=PRINTER_NAME,
-                        dry_run=DRY_RUN,
-                        pre_blank_lines=pre_blank_lines,
-                    )
-
-                    next_index += 1
-                else:
-                    break
-
-            state = player.get_state()
-            if next_index >= len(chunk_schedule):
-                if state in (vlc.State.Ended, vlc.State.Stopped, vlc.State.NothingSpecial):
-                    break
-
-            time.sleep(POLL_INTERVAL)
 
     except KeyboardInterrupt:
         print("\nAvbrutet av användaren.")
 
     finally:
-        player.stop()
+        if player is not None:
+            player.stop()
 
 
 if __name__ == "__main__":
     main()
+
+# # ================================
+# # HUVUDPROGRAM  ORGINAL UTAN LOOP
+# # ================================
+
+# def main() -> None:
+#     global GLOBAL_AUDIO_OFFSET
+
+#     scheduler = VariantScheduler(SCHEDULER_PRESET)
+
+#     data = load_data(JSON_FILE)
+#     audio_path = resolve_audio_path(data, JSON_FILE)
+
+#     chunk_schedule = build_chunk_schedule(data)
+#     if not chunk_schedule:
+#         raise ValueError("Inga chunks hittades i JSON-filen.")
+
+#     print("Program:", data["program"].get("title", "Okänd titel"))
+#     print("Ljudfil:", audio_path.name)
+#     print("Scheduler-strategi:", SCHEDULER_PRESET.strategy)
+#     print("Antal chunks att skriva ut:", len(chunk_schedule))
+#     print("Läge:", "SIMULERAD SKRIVARE" if DRY_RUN else "RIKTIG SKRIVARE")
+#     print("Kvittobredd:", RECEIPT_WIDTH, "tecken")
+#     print("Start-offset:", GLOBAL_AUDIO_OFFSET, "sek")
+#     print()
+#     print_help()
+
+#     print("Skriver ut introduktion...")
+#     print_intro(printer_name=PRINTER_NAME, dry_run=DRY_RUN)
+
+#     print(f"Väntar {INTRO_DELAY_SECONDS} sekunder innan ljudet startar...")
+#     time.sleep(INTRO_DELAY_SECONDS)
+
+#     instance = vlc.Instance()
+#     player = instance.media_player_new()
+#     media = instance.media_new(str(audio_path))
+#     player.set_media(media)
+
+#     player.play()
+#     time.sleep(0.4)
+
+#     next_index = 0
+#     paused = False
+#     running = True
+
+#     try:
+#         while running:
+#             command = read_command_nonblocking()
+
+#             if command:
+#                 if command == "pause":
+#                     player.pause()
+#                     paused = True
+#                     print("Pausad.")
+
+#                 elif command == "resume":
+#                     player.play()
+#                     paused = False
+#                     print("Fortsätter.")
+
+#                 elif command.startswith("offset "):
+#                     parts = command.split(maxsplit=1)
+#                     if len(parts) == 2:
+#                         try:
+#                             GLOBAL_AUDIO_OFFSET = float(parts[1])
+#                             print(f"Ny offset: {GLOBAL_AUDIO_OFFSET:.2f} sek")
+#                         except ValueError:
+#                             print("Kunde inte läsa offset. Exempel: offset 0.2")
+
+#                 elif command == "status":
+#                     pos = get_player_position_seconds(player)
+#                     print(
+#                         f"Status -> tid: {pos:.2f}s | "
+#                         f"offset: {GLOBAL_AUDIO_OFFSET:.2f}s | "
+#                         f"nästa chunk: {next_index + 1}/{len(chunk_schedule)}"
+#                     )
+
+#                 elif command == "quit":
+#                     print("Avslutar...")
+#                     running = False
+
+#                 else:
+#                     print("Okänt kommando.")
+
+#             if not running:
+#                 break
+
+#             if paused:
+#                 time.sleep(POLL_INTERVAL)
+#                 continue
+
+#             current_pos = get_player_position_seconds(player)
+
+#             while next_index < len(chunk_schedule):
+#                 item = chunk_schedule[next_index]
+#                 target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET - CHUNK_LEAD_SECONDS)
+#                 #target_time = max(0.0, item["print_time"] - GLOBAL_AUDIO_OFFSET)
+
+#                 if current_pos >= target_time:
+#                     segment = item["segment"]
+#                     chunk = item["chunk"]
+
+#                     variant_name = scheduler.choose_variant(
+#                         segment=segment,
+#                         chunk=chunk,
+#                         current_time=current_pos
+#                     )
+
+#                     text = get_chunk_text_for_variant(
+#                         segment=segment,
+#                         variant_name=variant_name,
+#                         chunk_id=chunk["chunk_id"]
+#                     )
+
+#                     print(f"[Segment {segment['id']} chunk {chunk['chunk_id']}] variant: {variant_name}")
+
+#                     pre_blank_lines = FIRST_SEGMENT_PRE_BLANK_LINES if next_index == 0 else CHUNK_GAP_PRE_BLANK_LINES
+
+#                     print_or_send_block(
+#                         text=text,
+#                         printer_name=PRINTER_NAME,
+#                         dry_run=DRY_RUN,
+#                         pre_blank_lines=pre_blank_lines,
+#                     )
+
+#                     next_index += 1
+#                 else:
+#                     break
+
+#             state = player.get_state()
+#             if next_index >= len(chunk_schedule):
+#                 if state in (vlc.State.Ended, vlc.State.Stopped, vlc.State.NothingSpecial):
+#                     break
+
+#             time.sleep(POLL_INTERVAL)
+
+#     except KeyboardInterrupt:
+#         print("\nAvbrutet av användaren.")
+
+#     finally:
+#         player.stop()
+
+
+# if __name__ == "__main__":
+#     main()
